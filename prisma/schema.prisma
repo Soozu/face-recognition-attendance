@@ -1,0 +1,234 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+// Seed configuration
+/// This will be automatically picked up by Prisma
+// seed: node prisma/seed.js
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum officetypes {
+  SDO
+  School
+}
+
+// ====================================================================================
+// ATTENDANCE SYSTEM MODELS
+// ====================================================================================
+
+model attendance {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  type      String
+  status    String
+  timestamp DateTime @default(now())
+  faceImage String   @db.LongText
+  verified  Boolean  @default(false)
+  user      users    @relation(fields: [userId], references: [uid], map: "Attendance_userId_fkey")
+
+  @@index([userId], map: "Attendance_userId_fkey")
+}
+
+model admin {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  firstLogin Boolean @default(true)
+  createdAt DateTime @default(now())
+}
+
+// ====================================================================================
+// LEAVE MANAGEMENT SYSTEM MODELS
+// ====================================================================================
+
+model leavetypes {
+  id              Int             @id @unique @default(autoincrement())
+  name            String          @unique
+  maxDaysAllotted Int?
+  isDeductible    Boolean
+  leaveRequests   leaverequests[]
+  leaveBalances   leavebalances[]
+}
+
+model leaverequests {
+  id             Int    @id @default(autoincrement())
+  requestorId    Int
+  requestor      users  @relation("Requestor", fields: [requestorId], references: [uid])
+  approvingStage String
+  approvers      Json
+
+  startDate          DateTime?
+  endDate            DateTime?
+  duration           Float
+  specificLeaveDates Json?
+
+  officeType officetypes
+
+  leaveTypeId     Int
+  leaveType       leavetypes @relation(fields: [leaveTypeId], references: [id])
+  status          String
+  dateRequested   DateTime
+  dateUpdated     DateTime?
+  contactInfo     String?
+  reason          String?    @db.Text
+  rejectionReason String?    @db.Text
+  remarks         String     @db.Text
+
+  leaveRequestLogs leaverequestlogs[]
+}
+
+model leavedates {
+  id             Int @id @default(autoincrement())
+  leaveRequestId Int
+  // leaverequest   leaverequests @relation(fields: [leaveRequestId], references: [id])
+
+  date          DateTime
+  leaveCoverage Int
+}
+
+model leavebalances {
+  id          Int        @id @default(autoincrement())
+  empId       Int
+  user        users      @relation(fields: [empId], references: [uid])
+  leaveTypeId Int
+  leaveType   leavetypes @relation(fields: [leaveTypeId], references: [id])
+  balance     Float
+  remaining   Float
+  year        String
+  dateUpdated DateTime?
+}
+
+model schools {
+  id   Int     @id @default(autoincrement())
+  name String  @unique
+  user users[]
+}
+
+model unitgroups {
+  id   Int     @id @default(autoincrement())
+  name String  @unique
+  unit units[]
+}
+
+model units {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  head        Boolean    @default(false)
+  unitGroupId Int
+  unitGroup   unitgroups @relation(fields: [unitGroupId], references: [id])
+  user        users[]
+}
+
+model roles {
+  id        Int         @id @default(autoincrement())
+  name      String      @unique
+  userRoles userroles[]
+}
+
+model userroles {
+  id     Int @id @default(autoincrement())
+  userId Int
+  roleId Int
+
+  user users @relation(fields: [userId], references: [uid])
+  role roles @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, roleId])
+}
+
+model userpositions {
+  id       Int    @id @default(autoincrement())
+  userId   Int
+  position String
+
+  user users @relation(fields: [userId], references: [uid])
+
+  @@unique([userId, position])
+}
+
+// ====================================================================================
+// UNIFIED USERS MODEL (Combining both systems)
+// ====================================================================================
+
+model users {
+  uid          Int         @id @default(autoincrement())
+  firstName    String
+  middleIntl   String?
+  lastName     String
+  name         String?     // Keep for backward compatibility with attendance system
+  email        String      @unique
+  password     String
+  status       Int         @default(1)
+  salary       Float?
+  officeType   officetypes
+  unitId       Int? // For SDO only
+  schoolId     Int? // For School only
+  unit         units?      @relation(fields: [unitId], references: [id])
+  school       schools?    @relation(fields: [schoolId], references: [id])
+  changePass   Int
+  createdAt    DateTime    @default(now())
+  dateHired    DateTime?
+  dateUpdated  DateTime?
+  updatedAt    DateTime?   // Keep for backward compatibility with attendance system
+  accessToken  String?
+  refreshToken String?
+
+  // Face recognition data for attendance system
+  faceData      String?      @db.LongText
+  faceDescriptor String?     @db.LongText
+  // Multi-angle face data
+  faceDataFront String?      @db.LongText
+  faceDataLeft  String?      @db.LongText
+  faceDataRight String?      @db.LongText
+  faceDataTilt  String?      @db.LongText
+  faceDescriptorFront String? @db.LongText
+  faceDescriptorLeft  String? @db.LongText
+  faceDescriptorRight String? @db.LongText
+  faceDescriptorTilt  String? @db.LongText
+
+  supervisorId Int? // FK to another user
+  supervisor   users?  @relation("UserSupervisor", fields: [supervisorId], references: [uid])
+  subordinates users[] @relation("UserSupervisor")
+
+  approvingAuthorityId  Int?
+  approvingAuthority    users?  @relation("UserApprovingAuthority", fields: [approvingAuthorityId], references: [uid])
+  approvingSubordinates users[] @relation("UserApprovingAuthority")
+
+  signaturePath String?
+  initialsPath  String?
+
+  // Relations
+  // Attendance system relations
+  attendance    attendance[]
+  
+  // Leave management system relations
+  leaveRequests leaverequests[] @relation("Requestor")
+  leaveBalances    leavebalances[]
+  positions        userpositions[]
+  roles            userroles[]
+  leaveRequestLogs leaverequestlogs[]
+}
+
+model leaverequestlogs {
+  id             Int      @id @default(autoincrement())
+  leaveRequestId Int
+  userId         Int
+  action         String // e.g. 'processed', 'approved', 'verified', 'rejected', etc.
+  notes          String?
+  performedAt    DateTime @default(now())
+
+  leaveRequest leaverequests @relation(fields: [leaveRequestId], references: [id])
+  user         users         @relation(fields: [userId], references: [uid])
+
+  @@index([leaveRequestId])
+  @@index([userId])
+}
+
+// Keep the old user model name as an alias for backward compatibility
+// This is a view/alias that maps to the users table
+// Note: You may need to update your application code to use 'users' instead of 'user'

@@ -1,0 +1,7 @@
+# Assets Directory
+
+Place your image files here:
+- deped-logo.png
+- background.jpg
+ 
+This directory contains static assets used by the Electron application. 
